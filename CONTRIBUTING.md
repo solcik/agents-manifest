@@ -28,6 +28,11 @@ Keep source retrieval separate from reconciliation and publication.
 Preserve the ownership, locking, and recovery contracts.
 Update the specification when public behavior changes.
 Use Conventional Commits for release classification.
+The devenv environment installs a `commit-msg` hook through the declared `committed` tool.
+Run `direnv exec . devenv tasks run commits:check` to check the current commit.
+CI validates new PR commits with the same `committed.toml` policy.
+The PR title workflow validates squash commit titles separately.
+Use `!` in a PR title to mark a breaking change.
 Read the [release guide](docs/releases.md) before release changes.
 
 ## Documentation contract

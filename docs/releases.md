@@ -19,6 +19,13 @@ No workflow automatically merges release PRs.
 
 ## Commit and version rules
 
+[`committed`](https://github.com/crate-ci/committed) checks local commit messages and new PR commits.
+[`action-semantic-pull-request`](https://github.com/amannn/action-semantic-pull-request) validates PR titles before squash merges.
+The title workflow reads metadata only.
+It never checks out or executes PR code under `pull_request_target`.
+Both checks permit the types listed below, plus `build`, `revert`, and `refactor`.
+Commit summaries have a 100-character limit.
+
 Use Conventional Commits for new changes:
 
 | Commit | Effect |
@@ -69,6 +76,11 @@ GitHub does not run tag-push workflows for tags created with `GITHUB_TOKEN`.
 The release workflow therefore calls the binary workflow directly.
 Action references use version tags.
 Release assets currently target Linux only.
+The repository does not use a second version or changelog engine.
+`commitlint` requires a separate Node development toolchain and duplicates the selected commit checks.
+`cargo-dist` remains deferred until the project needs installers or additional distribution targets.
+The current binary workflow publishes one Linux archive and checksums.
+After these workflows merge, add `Validate PR title` and `Validate commit messages` to the required branch checks.
 
 ## Failed publication
 

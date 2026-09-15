@@ -1,0 +1,21 @@
+name: Commit messages
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  commits:
+    name: Validate commit messages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: crate-ci/committed@v1.1.11
+        with:
+          commits: ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}

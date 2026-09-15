@@ -1,7 +1,21 @@
 {pkgs, ...}: {
-  packages = [pkgs.cargo pkgs.rustc pkgs.rustfmt pkgs.clippy pkgs.git pkgs.hyperfine pkgs.alejandra pkgs.actionlint pkgs.release-plz];
+  packages = [pkgs.cargo pkgs.rustc pkgs.rustfmt pkgs.clippy pkgs.git pkgs.hyperfine pkgs.alejandra pkgs.actionlint pkgs.release-plz pkgs.committed];
+
+  git-hooks.hooks.committed = {
+    enable = true;
+    name = "Conventional commit message";
+    entry = "${pkgs.committed}/bin/committed --config committed.toml --commit-file";
+    stages = ["commit-msg"];
+  };
 
   tasks = {
+    "commits:check" = {
+      exec = ''
+        set -euo pipefail
+        git log -1 --format=%B | committed --config committed.toml --commit-file -
+      '';
+      showOutput = true;
+    };
     "quality:format".exec = "cargo fmt && alejandra devenv.nix";
     "quality:lint" = {
       exec = "cargo fmt --check && alejandra --check devenv.nix && cargo clippy --locked --all-targets -- -D warnings && actionlint";
