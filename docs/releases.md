@@ -44,16 +44,18 @@ Maintenance commits appear when a release-worthy change creates a release.
 
 ## Contributor attribution
 
-The generated changelog lists GitHub contributors from linked pull requests.
+The generated changelog lists GitHub usernames from release commits.
 Release notes use the same changelog body and contributor mentions.
 The contributor list uses GitHub usernames, not email addresses.
 Keep PR references in merged commit messages, such as `(#42)`.
 GitHub adds this reference during a squash merge.
 Use Conventional Commit prefixes in PR titles.
-Release-plz identifies PR authors through the GitHub API.
+Release-plz resolves commit authors through the GitHub API when the template references `remote.username`.
 This attribution does not list every reviewer or commit coauthor.
 If GitHub returns no contributors, the template omits the contributor section.
 Do not insert guessed usernames.
+The list removes duplicate usernames and sorts the result.
+The [upstream enrichment code](https://github.com/release-plz/release-plz/blob/main/crates/release_plz_core/src/changelog_filler.rs) defines the required template reference.
 
 ## Repository setup
 
