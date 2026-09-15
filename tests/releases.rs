@@ -73,6 +73,26 @@ fn changelog_requests_release_plz_commit_username_enrichment()
 }
 
 #[test]
+fn commit_and_pr_title_checks_accept_the_same_types() -> Result<(), Box<dyn std::error::Error>> {
+    let policy: toml::Value = toml::from_str(include_str!("../committed.toml"))?;
+    let workflow: serde_yaml::Value =
+        serde_yaml::from_str(include_str!("../.github/workflows/pr-title.yaml"))?;
+    let commit_types = policy["allowed_types"]
+        .as_array()
+        .ok_or("Missing commit types")?
+        .iter()
+        .map(|value| value.as_str().ok_or("Invalid commit type"))
+        .collect::<Result<Vec<_>, _>>()?;
+    let title_types = workflow["jobs"]["title"]["steps"][0]["with"]["types"]
+        .as_str()
+        .ok_or("Missing PR title types")?
+        .split_whitespace()
+        .collect::<Vec<_>>();
+    assert_eq!(commit_types, title_types);
+    Ok(())
+}
+
+#[test]
 fn release_notes_reuse_the_changelog_without_duplicate_attribution()
 -> Result<(), Box<dyn std::error::Error>> {
     let configuration: toml::Value = toml::from_str(include_str!("../release-plz.toml"))?;
