@@ -1,0 +1,9 @@
+version: 1
+targets: [codex, claude, pi, opencode]
+skills:
+  - name: sample
+    source: https://github.com/example/skills.git
+    revision: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    path: skills/sample
+    activation: on-demand
+bundles: []

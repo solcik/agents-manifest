@@ -1,0 +1,50 @@
+[package]
+name = "agents-manifest"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89"
+description = "Immutable project skill manifests and safe harness projections"
+publish = false
+
+[[bin]]
+name = "agent-skills"
+path = "src/main.rs"
+
+[dependencies]
+blake3 = "1.8"
+clap = { version = "4.6", features = ["derive", "env"] }
+clap_complete = "4.6"
+rayon = "1.11"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = { package = "serde_yaml_ng", version = "0.10" }
+tempfile = "3"
+thiserror = "2"
+url = "2"
+unicode-normalization = "0.1"
+wait-timeout = "0.2"
+
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.30", features = ["process", "signal"] }
+
+[dev-dependencies]
+flate2 = "1"
+sha1 = "0.10"
+proptest = "1"
+divan = "0.1"
+jsonschema = { version = "0.56", default-features = false }
+
+[[bench]]
+name = "core"
+harness = false
+
+[profile.release]
+lto = "thin"
+strip = true
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
