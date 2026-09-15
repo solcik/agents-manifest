@@ -1,0 +1,12 @@
+.direnv
+.devenv*
+/target
+/result
+# BEGIN agents-manifest managed output
+/.agents/skills-state.json
+/.agents/skills.lock
+/.agents/skills-transaction
+/.agents/.skills-stage-*
+/.agents/skills/codebase-design/
+/.agents/skills/writing-guidelines/
+# END agents-manifest managed output

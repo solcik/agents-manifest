@@ -1,0 +1,30 @@
+[workspace]
+git_only = true
+release_always = false
+git_tag_name = "v{{ version }}"
+git_release_name = "v{{ version }}"
+git_release_draft = true
+semver_check = false
+dependencies_update = false
+features_always_increment_minor = true
+pr_name = "chore(release): prepare the next release"
+release_commits = "(?m)^(feat|fix|perf|refactor)(\\([^\\r\\n]+\\))?:|^[a-z]+(\\([^\\r\\n]+\\))?!:|^BREAKING CHANGE:"
+
+[[package]]
+name = "agents-manifest"
+changelog_path = "CHANGELOG.md"
+
+[changelog]
+header = "# Changelog\n\nThis file records changes for each release.\n"
+protect_breaking_commits = true
+sort_commits = "oldest"
+commit_parsers = [
+  { message = "^chore\\(release\\):", skip = true },
+  { message = "^feat", group = "Added" },
+  { message = "^fix", group = "Fixed" },
+  { message = "^perf", group = "Performance" },
+  { message = "^refactor", group = "Changed" },
+  { message = "^docs", group = "Documentation" },
+  { message = "^(test|ci|build|chore)", group = "Maintenance" },
+  { message = ".*", group = "Other changes" },
+]

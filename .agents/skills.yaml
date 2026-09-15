@@ -1,0 +1,11 @@
+version: 1
+targets: [codex]
+skills:
+  - name: codebase-design
+    source: ssh://git@github.com/solcik/agent-skills.git
+    revision: 8ee6f5e3c4ec8575efd7ef263870d85f191da022
+    path: dist/skills/codebase-design
+  - name: writing-guidelines
+    source: ssh://git@github.com/solcik/agent-skills.git
+    revision: 8ee6f5e3c4ec8575efd7ef263870d85f191da022
+    path: dist/skills/writing-guidelines
