@@ -4,6 +4,7 @@ release_always = false
 git_tag_name = "v{{ version }}"
 git_release_name = "v{{ version }}"
 git_release_draft = true
+git_release_body = "{{ changelog }}"
 semver_check = false
 dependencies_update = false
 features_always_increment_minor = true
@@ -16,6 +17,21 @@ changelog_path = "CHANGELOG.md"
 
 [changelog]
 header = "# Changelog\n\nThis file records changes for each release.\n"
+body = """
+## {% if release_link %}[{{ version }}]({{ release_link }}){% else %}{{ version }}{% endif %} - {{ timestamp | date(format="%Y-%m-%d") }}
+{% for group, changes in commits | group_by(attribute="group") %}
+### {{ group }}
+{% for commit in changes %}
+- {% if commit.breaking %}**BREAKING:** {% endif %}{% if commit.scope %}**{{ commit.scope }}:** {% endif %}{{ commit.message }}{% for link in commit.links %} ([{{ link.text }}]({{ link.href }})){% endfor %}
+{% endfor %}
+{% endfor %}
+{% if remote.contributors %}
+### Contributors
+{% for contributor in remote.contributors | sort(attribute="username") %}
+- @{{ contributor.username }}
+{% endfor %}
+{% endif %}
+"""
 protect_breaking_commits = true
 sort_commits = "oldest"
 commit_parsers = [
