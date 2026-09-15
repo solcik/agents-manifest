@@ -2,6 +2,7 @@
 .devenv*
 /target
 /result
+/.pre-commit-config.yaml
 # BEGIN agents-manifest managed output
 /.agents/skills-state.json
 /.agents/skills.lock

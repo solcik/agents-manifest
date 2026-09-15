@@ -25,10 +25,11 @@ body = """
 - {% if commit.breaking %}**BREAKING:** {% endif %}{% if commit.scope %}**{{ commit.scope }}:** {% endif %}{{ commit.message }}{% for link in commit.links %} ([{{ link.text }}]({{ link.href }})){% endfor %}
 {% endfor %}
 {% endfor %}
-{% if remote.contributors %}
+{% set contributors = commits | filter(attribute="remote.username") | map(attribute="remote.username") | unique | sort %}
+{% if contributors %}
 ### Contributors
-{% for contributor in remote.contributors | sort(attribute="username") %}
-- @{{ contributor.username }}
+{% for username in contributors %}
+- @{{ username }}
 {% endfor %}
 {% endif %}
 """
