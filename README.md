@@ -22,6 +22,9 @@ agent-skills completions zsh
 ```
 
 The default manifest is `.agents/skills.yaml`.
+The selected root can be a Git worktree or an ordinary directory.
+Use `--project "$HOME"` for a HOME manifest.
+Use `--project <temporary-directory>` for an ad hoc manifest.
 Use `--project` to select another project.
 Use `--manifest` to select another manifest within that project.
 Validation also accepts a positional manifest path.

@@ -423,6 +423,9 @@ fn resolve<S: Source>(
 }
 
 fn tracked(root: &Path) -> Result<BTreeSet<String>> {
+    if !has_repository_metadata(root)? {
+        return Ok(BTreeSet::new());
+    }
     let output = Command::new("git")
         .current_dir(root)
         .args(["ls-files", "-z", "--", "."])
@@ -432,7 +435,9 @@ fn tracked(root: &Path) -> Result<BTreeSet<String>> {
         .output()
         .context("inspect tracked project files")?;
     if !output.status.success() {
-        return Err(Error::Invalid("project: require a Git working tree".into()));
+        return Err(Error::Invalid(
+            "project: Git cannot list tracked files".into(),
+        ));
     }
     output
         .stdout
@@ -444,6 +449,22 @@ fn tracked(root: &Path) -> Result<BTreeSet<String>> {
                 .map_err(|_| Error::Conflict("project: require UTF-8 tracked paths".into()))
         })
         .collect()
+}
+
+fn has_repository_metadata(root: &Path) -> Result<bool> {
+    for ancestor in root.ancestors() {
+        match fs::symlink_metadata(ancestor.join(".git")) {
+            Ok(_) => return Ok(true),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(source) => {
+                return Err(Error::Io {
+                    operation: "inspect repository metadata",
+                    source,
+                });
+            }
+        }
+    }
+    Ok(false)
 }
 
 fn refuse_tracked(path: &str, tracked: &BTreeSet<String>) -> Result<()> {

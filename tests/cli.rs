@@ -86,6 +86,69 @@ fn missing_manifest_returns_declaration_error() {
 }
 
 #[test]
+fn ordinary_directory_sync_preserves_ownership_and_removal() {
+    let fixture = CliFixture::new();
+    std::fs::remove_dir_all(fixture.project.path().join(".git")).unwrap();
+    for operation in ["plan", "sync", "check", "sync"] {
+        let output = fixture
+            .command()
+            .args([operation, "--json"])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let skill = fixture
+        .project
+        .path()
+        .join(".agents/skills/sample/SKILL.md");
+    std::fs::write(&skill, "User content").unwrap();
+    let output = fixture.command().args(["sync", "--json"]).output().unwrap();
+    assert_eq!(output.status.code(), Some(4));
+    assert_eq!(std::fs::read_to_string(&skill).unwrap(), "User content");
+    std::fs::write(
+        &skill,
+        b"---\nname: sample\ndescription: CLI test skill\n---\nOriginal body\n",
+    )
+    .unwrap();
+    std::fs::write(
+        fixture.project.path().join(".agents/skills.yaml"),
+        "version: 1\ntargets: [codex, claude]\nskills: []\n",
+    )
+    .unwrap();
+    let output = fixture.command().args(["sync", "--json"]).output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!skill.exists());
+}
+
+#[test]
+fn broken_repository_metadata_is_not_an_ordinary_directory() {
+    let fixture = CliFixture::new();
+    std::fs::remove_dir_all(fixture.project.path().join(".git")).unwrap();
+    std::fs::write(
+        fixture.project.path().join(".git"),
+        "gitdir: missing-repository\n",
+    )
+    .unwrap();
+    let output = fixture.command().args(["sync", "--json"]).output().unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        !fixture
+            .project
+            .path()
+            .join(".agents/skills-state.json")
+            .exists()
+    );
+}
+
+#[test]
 fn real_cli_plans_syncs_checks_and_reports_drift_without_credentials() {
     let fixture = CliFixture::new();
     let output = fixture.command().args(["plan", "--json"]).output().unwrap();
