@@ -11,6 +11,14 @@ The repository releases GitHub binaries, not crates.io packages.
 3. Approve its checks when GitHub requires workflow approval.
 4. Merge the release PR.
 
+Step 3 disappears once the repository holds a `RELEASE_PLZ_TOKEN` secret.
+Add a fine-grained personal access token for this repository.
+Give it write access to contents, pull requests, and workflows.
+The `release-pr` job then opens the pull request as that person.
+GitHub starts the checks without approval.
+Without the secret the job falls back to `github.token`.
+A maintainer then approves each run from the pull request page.
+
 Automation creates the version tag and a draft GitHub release.
 The reusable binary workflow runs formatting, Clippy, and tests.
 It builds the Linux binary and generates SHA256SUMS.

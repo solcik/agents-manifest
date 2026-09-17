@@ -67,8 +67,11 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
+      # `github.token` opens the release pull request as GitHub Actions.
+      # GitHub then holds every check on that pull request for approval.
+      # `RELEASE_PLZ_TOKEN` opens it as a person, and the checks start.
       - uses: release-plz/action@v0.5
         with:
           command: release-pr
         env:
-          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN || github.token }}
