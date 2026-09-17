@@ -1,7 +1,10 @@
 name: PR title
 
+# `pull_request_target` never starts for a pull request that GitHub Actions
+# opens or updates, so the required check stayed unreported on every release
+# pull request. `pull_request` starts for those events.
 on:
-  pull_request_target:
+  pull_request:
     types: [opened, reopened, edited, synchronize]
 
 permissions:

@@ -102,3 +102,27 @@ fn release_notes_reuse_the_changelog_without_duplicate_attribution()
     );
     Ok(())
 }
+
+#[test]
+fn pr_title_check_runs_on_the_events_release_pull_requests_produce()
+-> Result<(), Box<dyn std::error::Error>> {
+    let workflow: serde_yaml::Value =
+        serde_yaml::from_str(include_str!("../.github/workflows/pr-title.yaml"))?;
+    let triggers = workflow
+        .get("on")
+        .or_else(|| workflow.get(serde_yaml::Value::Bool(true)))
+        .ok_or("Missing workflow triggers")?
+        .as_mapping()
+        .ok_or("Invalid workflow triggers")?;
+    assert!(
+        triggers.contains_key(serde_yaml::Value::from("pull_request")),
+        "GitHub Actions opens and updates every release pull request. \
+         Only `pull_request` starts a check for those events."
+    );
+    assert!(
+        !triggers.contains_key(serde_yaml::Value::from("pull_request_target")),
+        "`pull_request_target` never starts for a release pull request. \
+         A required check on that event blocks the release."
+    );
+    Ok(())
+}
