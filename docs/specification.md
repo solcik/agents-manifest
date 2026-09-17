@@ -15,6 +15,10 @@ The public CLI repository is `solcik/agents-manifest`.
 The project tracks `.agents/skills.yaml` and local `.agents/skills/<name>` directories.
 The manifest contains every external dependency and its immutable Git commit.
 The project does not track downloaded content or a separate dependency lockfile.
+The selected root can be a Git worktree, HOME, or an ordinary temporary directory.
+Git roots retain tracking checks for generated paths.
+Ordinary directories retain ownership, locking, and recovery checks without Git tracking.
+Broken Git metadata fails before publication.
 
 ## Manifest
 
