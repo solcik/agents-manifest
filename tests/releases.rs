@@ -126,3 +126,27 @@ fn pr_title_check_runs_on_the_events_release_pull_requests_produce()
     );
     Ok(())
 }
+
+#[test]
+fn release_pull_request_job_prefers_a_person_token() -> Result<(), Box<dyn std::error::Error>> {
+    let workflow: serde_yaml::Value =
+        serde_yaml::from_str(include_str!("../.github/workflows/release-plz.yaml"))?;
+    let steps = workflow["jobs"]["release-pr"]["steps"]
+        .as_sequence()
+        .ok_or("Missing release pull request steps")?;
+    let token = steps
+        .iter()
+        .filter_map(|step| step.get("env")?.get("GITHUB_TOKEN")?.as_str())
+        .next()
+        .ok_or("Missing release pull request token")?;
+    assert!(
+        token.contains("secrets.RELEASE_PLZ_TOKEN"),
+        "GitHub holds every check on a pull request that GitHub Actions opens. \
+         A person token starts those checks without approval."
+    );
+    assert!(
+        token.contains("github.token"),
+        "The job keeps a fallback for a repository without the secret."
+    );
+    Ok(())
+}
