@@ -22,7 +22,8 @@ No workflow automatically merges release PRs.
 [`committed`](https://github.com/crate-ci/committed) checks local commit messages and new PR commits.
 [`action-semantic-pull-request`](https://github.com/amannn/action-semantic-pull-request) validates PR titles before squash merges.
 The title workflow reads metadata only.
-It never checks out or executes PR code under `pull_request_target`.
+It never checks out a pull request and never executes pull request code.
+It runs on `pull_request`, because `pull_request_target` never starts for a release pull request.
 Both checks permit the types listed below, plus `build`, `revert`, and `refactor`.
 Commit summaries have a 100-character limit.
 
@@ -73,6 +74,8 @@ It uses `GITHUB_TOKEN` without a personal access token.
 Merge the automation into `main` before its first run.
 
 GitHub does not run tag-push workflows for tags created with `GITHUB_TOKEN`.
+GitHub also does not start `pull_request_target` for a pull request that GitHub Actions opens or updates.
+A required check on that event stays unreported and blocks every release pull request.
 The release workflow therefore calls the binary workflow directly.
 Action references use version tags.
 Release assets currently target Linux only.
