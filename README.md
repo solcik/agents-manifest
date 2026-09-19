@@ -27,7 +27,23 @@ Use `--project "$HOME"` for a HOME manifest.
 Use `--project <temporary-directory>` for an ad hoc manifest.
 Use `--project` to select another project.
 Use `--manifest` to select another manifest within that project.
+Use `--worktrees` to publish one manifest into every worktree of a repository.
 Validation also accepts a positional manifest path.
+
+## Worktree containers
+
+A container holds a bare Git directory and one worktree per branch.
+Every harness stops its skill search at the worktree it starts in.
+A container directory therefore cannot hold the projection for its lanes.
+
+```sh
+agent-skills --project <container> --worktrees sync
+```
+
+The command reads `<container>/.agents/skills.yaml`.
+It publishes the same skills into each checked-out worktree.
+The bare entry carries no working tree, so the command skips it.
+Omit `--worktrees` to publish into one selected lane only.
 
 `validate` checks declarations without Git, network access, or cache creation.
 `plan` resolves sources without project writes.

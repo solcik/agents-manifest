@@ -290,3 +290,197 @@ fn tracked_journals_cannot_trigger_recovery_of_project_files() {
     );
     assert!(!root.join(".agents/skills.lock").exists());
 }
+
+/// Build a worktree container: a bare directory plus one worktree per branch.
+///
+/// The layout matches the convention this CLI must serve.
+/// `<container>/.git` is a FILE that points at `<container>/.bare`.
+struct ContainerFixture {
+    container: tempfile::TempDir,
+    cache: tempfile::TempDir,
+}
+
+impl ContainerFixture {
+    fn new(lanes: &[&str]) -> Self {
+        let inner = CliFixture::new();
+        let seed = inner.project.path();
+        run_git(seed, &["add", "-A"]);
+        run_git(
+            seed,
+            &[
+                "-c",
+                "user.email=fixture@example.test",
+                "-c",
+                "user.name=Fixture",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "--quiet",
+                "-m",
+                "seed",
+            ],
+        );
+        let container = tempfile::tempdir().unwrap();
+        assert!(
+            Command::new("git")
+                .args(["clone", "--quiet", "--bare"])
+                .arg(seed)
+                .arg(container.path().join(".bare"))
+                .status()
+                .unwrap()
+                .success()
+        );
+        std::fs::write(container.path().join(".git"), "gitdir: ./.bare\n").unwrap();
+        for (index, lane) in lanes.iter().enumerate() {
+            let mut args = vec!["worktree", "add", "--quiet"];
+            if index > 0 {
+                args.push("-b");
+                args.push(lane);
+            }
+            args.push(lane);
+            if index == 0 {
+                args.push("HEAD");
+            }
+            run_git(container.path(), &args);
+        }
+        Self {
+            container,
+            cache: inner.cache,
+        }
+    }
+
+    fn command(&self) -> Command {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_agent-skills"));
+        command
+            .arg("--project")
+            .arg(self.container.path())
+            .arg("--cache-dir")
+            .arg(self.cache.path())
+            .arg("--offline");
+        command
+    }
+}
+
+fn run_git(directory: &std::path::Path, args: &[&str]) {
+    assert!(
+        Command::new("git")
+            .current_dir(directory)
+            .args(args)
+            .status()
+            .unwrap()
+            .success(),
+        "git {args:?} failed in {}",
+        directory.display()
+    );
+}
+
+#[test]
+fn worktrees_publish_one_container_manifest_into_every_lane() {
+    let fixture = ContainerFixture::new(&["develop", "lane"]);
+    let container = fixture.container.path();
+    // The container manifest is the single declaration for every lane.
+    std::fs::create_dir_all(container.join(".agents")).unwrap();
+    std::fs::copy(
+        container.join("develop/.agents/skills.yaml"),
+        container.join(".agents/skills.yaml"),
+    )
+    .unwrap();
+
+    let output = fixture
+        .command()
+        .args(["sync", "--worktrees"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{:?}", output);
+    for lane in ["develop", "lane"] {
+        let skill = container.join(lane).join(".agents/skills/sample/SKILL.md");
+        assert!(skill.is_file(), "missing projection in {lane}");
+        // Each lane owns its state and ignore block independently.
+        assert!(
+            container
+                .join(lane)
+                .join(".agents/skills-state.json")
+                .is_file()
+        );
+    }
+    // The container itself is not a worktree and receives no projection.
+    assert!(!container.join(".agents/skills/sample").exists());
+
+    let check = fixture
+        .command()
+        .args(["check", "--worktrees"])
+        .output()
+        .unwrap();
+    assert!(check.status.success(), "{:?}", check);
+}
+
+#[test]
+fn worktrees_report_each_lane_separately_in_json() {
+    let fixture = ContainerFixture::new(&["develop", "lane"]);
+    let container = fixture.container.path();
+    std::fs::create_dir_all(container.join(".agents")).unwrap();
+    std::fs::copy(
+        container.join("develop/.agents/skills.yaml"),
+        container.join(".agents/skills.yaml"),
+    )
+    .unwrap();
+
+    let output = fixture
+        .command()
+        .args(["plan", "--worktrees", "--json"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{:?}", output);
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let projects = report["projects"].as_array().unwrap();
+    assert_eq!(projects.len(), 2);
+    for project in projects {
+        let path = project["path"].as_str().unwrap();
+        assert!(
+            path.ends_with("/develop") || path.ends_with("/lane"),
+            "{path}"
+        );
+        assert!(!project["changes"].as_array().unwrap().is_empty());
+    }
+    // Planning writes nothing.
+    assert!(!container.join("develop/.agents/skills/sample").exists());
+}
+
+#[test]
+fn a_single_lane_stays_the_default_and_leaves_its_siblings_alone() {
+    let fixture = ContainerFixture::new(&["develop", "lane"]);
+    let container = fixture.container.path();
+    let output = Command::new(env!("CARGO_BIN_EXE_agent-skills"))
+        .arg("--project")
+        .arg(container.join("develop"))
+        .arg("--cache-dir")
+        .arg(fixture.cache.path())
+        .args(["--offline", "sync"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{:?}", output);
+    assert!(
+        container
+            .join("develop/.agents/skills/sample/SKILL.md")
+            .is_file()
+    );
+    assert!(!container.join("lane/.agents/skills/sample").exists());
+}
+
+#[test]
+fn worktrees_outside_a_repository_are_refused() {
+    let elsewhere = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(elsewhere.path().join(".agents")).unwrap();
+    std::fs::write(
+        elsewhere.path().join(".agents/skills.yaml"),
+        "version: 1\ntargets: [codex]\nskills: []\n",
+    )
+    .unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_agent-skills"))
+        .arg("--project")
+        .arg(elsewhere.path())
+        .args(["--offline", "plan", "--worktrees"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+}

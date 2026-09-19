@@ -1,15 +1,16 @@
 use crate::{
     error::{Error, IoContext, Result},
-    manifest::Manifest,
-    plan::{Planner, Report},
+    manifest::{Manifest, ValidatedManifest},
+    plan::{Plan, Planner, Report},
     source::{GitMode, GitOptions, GitSource, default_cache},
     transaction::{ProjectLock, ProjectReadLock, Transaction},
+    workspace::Workspace,
 };
 use clap::{CommandFactory, Parser, Subcommand};
 use std::{
     fs,
     io::{self, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
     time::Duration,
 };
 
@@ -29,6 +30,9 @@ pub struct Cli {
     /// Select the manifest relative to the project.
     #[arg(long, global = true, default_value = ".agents/skills.yaml")]
     pub manifest: PathBuf,
+    /// Apply the manifest to every checked-out worktree of the project repository.
+    #[arg(long, global = true)]
+    pub worktrees: bool,
     /// Select the immutable source cache.
     #[arg(long, global = true, env = "AGENTS_MANIFEST_CACHE_DIR")]
     pub cache_dir: Option<PathBuf>,
@@ -98,21 +102,11 @@ impl Cli {
         if matches!(self.command, Command::Validate { .. }) {
             return self.write_validation();
         }
-        let sync = matches!(self.command, Command::Sync);
-        let lock = if sync {
-            Some(ProjectLock::acquire(&root)?)
+        let workspace = if self.worktrees {
+            Workspace::worktrees(&root)?
         } else {
-            None
+            Workspace::single(root)
         };
-        let _read_lock = if sync {
-            None
-        } else {
-            ProjectReadLock::acquire(&root)?
-        };
-        let transaction = lock.as_ref().map(Transaction::new);
-        if let Some(transaction) = &transaction {
-            transaction.recover()?;
-        }
         let source = GitSource::new(GitOptions {
             cache: self
                 .cache_dir
@@ -124,21 +118,68 @@ impl Cli {
             timeout: Duration::from_secs(self.timeout),
         });
         let check = matches!(self.command, Command::Check);
-        let plan = Planner::new(&root, &input, &source)
-            .jobs(usize::from(self.jobs))
-            .check(check)
-            .build()?;
-        if let Some(transaction) = &transaction {
-            transaction.apply(&plan)?;
+        let sync = matches!(self.command, Command::Sync);
+        // Resolve and validate every root before the first write.
+        // A partially published set of worktrees is worse than a refused one.
+        let mut prepared = Vec::with_capacity(workspace.roots().len());
+        for project in workspace.roots() {
+            prepared.push(self.prepare(project, &input, &source, check, sync)?);
         }
-        self.write_report(&plan.report)?;
-        if check && !plan.operations.is_empty() {
+        for (lock, plan) in &prepared {
+            if let Some(lock) = lock {
+                Transaction::new(lock).apply(plan)?;
+            }
+        }
+        let differing: usize = prepared.iter().map(|(_, plan)| plan.operations.len()).sum();
+        let reports: Vec<(&Path, &Report)> = workspace
+            .roots()
+            .iter()
+            .map(PathBuf::as_path)
+            .zip(prepared.iter().map(|(_, plan)| &plan.report))
+            .collect();
+        if workspace.is_fanned_out() {
+            self.write_workspace_report(&reports)?;
+        } else {
+            self.write_report(reports[0].1)?;
+        }
+        if check && differing > 0 {
             return Err(Error::Drift(format!(
-                "check: {} generated paths differ",
-                plan.operations.len()
+                "check: {differing} generated paths differ"
             )));
         }
         Ok(())
+    }
+
+    /// Lock one project root, recover an interrupted run, and resolve its plan.
+    ///
+    /// The returned lock stays alive until publication finishes.
+    /// A command that does not publish holds a shared read lock for its own scope.
+    fn prepare(
+        &self,
+        project: &Path,
+        input: &ValidatedManifest,
+        source: &GitSource,
+        check: bool,
+        sync: bool,
+    ) -> Result<(Option<ProjectLock>, Plan)> {
+        let lock = if sync {
+            Some(ProjectLock::acquire(project)?)
+        } else {
+            None
+        };
+        let _read_lock = if sync {
+            None
+        } else {
+            ProjectReadLock::acquire(project)?
+        };
+        if let Some(lock) = &lock {
+            Transaction::new(lock).recover()?;
+        }
+        let plan = Planner::new(project, input, source)
+            .jobs(usize::from(self.jobs))
+            .check(check)
+            .build()?;
+        Ok((lock, plan))
     }
 
     fn write_validation(&self) -> Result<()> {
@@ -152,6 +193,47 @@ impl Cli {
             writeln!(stdout, "Manifest validation passed.")
         }
         .context("write validation result")
+    }
+
+    /// Report one section per project root.
+    ///
+    /// The section header names the worktree.
+    /// The absolute path stays unambiguous when lanes share a basename.
+    fn write_workspace_report(&self, reports: &[(&Path, &Report)]) -> Result<()> {
+        if self.quiet {
+            return Ok(());
+        }
+        let mut stdout = io::BufWriter::new(io::stdout().lock());
+        if self.json {
+            let projects: Vec<_> = reports
+                .iter()
+                .map(|(project, report)| {
+                    serde_json::json!({
+                        "path": project.to_string_lossy(),
+                        "changes": &report.changes,
+                    })
+                })
+                .collect();
+            let bytes = serde_json::to_vec(&serde_json::json!({
+                "version": 1, "projects": projects
+            }))
+            .map_err(|_| Error::Internal("cannot encode JSON report".into()))?;
+            stdout.write_all(&bytes).context("write JSON report")?;
+            writeln!(stdout).context("write JSON report separator")?;
+            return stdout.flush().context("flush plan report");
+        }
+        for (project, report) in reports {
+            writeln!(stdout, "{}", project.display()).context("write project header")?;
+            if report.changes.is_empty() {
+                writeln!(stdout, "  up to date").context("write project summary")?;
+                continue;
+            }
+            for change in &report.changes {
+                writeln!(stdout, "  {} {}", action_label(&change.action), change.path)
+                    .context("write plan change")?;
+            }
+        }
+        stdout.flush().context("flush plan report")
     }
 
     fn write_report(&self, report: &Report) -> Result<()> {
@@ -168,12 +250,8 @@ impl Cli {
             writeln!(stdout, "Project skills are up to date.").context("write plan summary")?;
         } else {
             for change in &report.changes {
-                let action = match change.action {
-                    crate::plan::Action::Create => "create",
-                    crate::plan::Action::Update => "update",
-                    crate::plan::Action::Remove => "remove",
-                };
-                writeln!(stdout, "{action} {}", change.path).context("write plan change")?;
+                writeln!(stdout, "{} {}", action_label(&change.action), change.path)
+                    .context("write plan change")?;
             }
         }
         stdout.flush().context("flush plan report")
@@ -193,6 +271,14 @@ impl Cli {
         } else {
             writeln!(stderr, "{error}").context("write CLI error")
         }
+    }
+}
+
+fn action_label(action: &crate::plan::Action) -> &'static str {
+    match action {
+        crate::plan::Action::Create => "create",
+        crate::plan::Action::Update => "update",
+        crate::plan::Action::Remove => "remove",
     }
 }
 
