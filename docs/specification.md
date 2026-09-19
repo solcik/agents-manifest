@@ -44,6 +44,26 @@ Bundle files use `version: 1` and a `skills` list with the same skill entry sche
 Bundles cannot reference other bundles.
 Bundle entries cannot widen their reference's effective targets.
 
+## Worktree containers
+
+`Workspace` resolves the project roots one command applies to.
+A single root preserves the original one-project behaviour.
+`--worktrees` resolves every checked-out worktree of the selected repository.
+
+The CLI reads `git worktree list --porcelain` for that resolution.
+It drops the bare record of a container, because a bare directory has no working tree.
+It drops a registered path that no longer exists on disk.
+It refuses a selection that resolves to no worktree.
+
+Each harness stops its skill search at the worktree it starts in.
+A container directory therefore cannot hold the projection for its lanes.
+The CLI publishes one projection per worktree instead.
+
+Each worktree keeps its own ownership metadata, lock, and ignore block.
+The CLI resolves and validates every worktree before the first write.
+Publication is atomic per worktree, not across the set.
+An interrupted set leaves each published worktree recoverable on its own.
+
 ## Planning and adapters
 
 The planner expands bundles and validates the complete desired projection.
