@@ -2,6 +2,20 @@
 
 This file records changes for each release.
 
+## [0.3.0](https://github.com/solcik/agents-manifest/compare/v0.2.0...v0.3.0) - 2026-09-19
+
+### Added
+
+- **cli:** publish one manifest into every worktree of a container ([#10](https://github.com/solcik/agents-manifest/pull/10))
+
+
+
+
+### Contributors
+
+- @davidsolc-ai
+
+
 ## [0.2.0](https://github.com/solcik/agents-manifest/compare/v0.1.1...v0.2.0) - 2026-09-17
 
 ### Added
