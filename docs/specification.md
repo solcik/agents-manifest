@@ -64,6 +64,18 @@ The CLI resolves and validates every worktree before the first write.
 Publication is atomic per worktree, not across the set.
 An interrupted set leaves each published worktree recoverable on its own.
 
+A harness can start in the container root, which is not a worktree.
+`agent-skills link` points the root at one base worktree instead of a second projection.
+It creates relative symlinks for `.agents/skills` and `.claude/skills`.
+It links only the directories that exist in the base worktree.
+The default base holds the branch of `refs/remotes/origin/HEAD`, or else of the bare `HEAD`.
+`--base` selects another registered worktree of the container.
+The base must lie inside the container, so each link target stays relative.
+The command replaces an existing symlink through an atomic rename.
+It refuses a real file or directory at a link path with exit status 4.
+It decides every link before the first write.
+The command needs no manifest and holds no project lock.
+
 ## Planning and adapters
 
 The planner expands bundles and validates the complete desired projection.
@@ -120,6 +132,7 @@ Ownership metadata updates only after all projections succeed.
 `agent-skills sync` applies a complete validated plan.
 `agent-skills check` compares expected files with recorded ownership and current content.
 `agent-skills check --offline` requires every pinned source in the local cache.
+`agent-skills link` links a container root to its base worktree; `link --check` reports drift.
 
 Success returns exit status 0.
 Invalid declarations return 2.

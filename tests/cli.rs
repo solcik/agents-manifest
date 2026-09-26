@@ -484,3 +484,140 @@ fn worktrees_outside_a_repository_are_refused() {
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
 }
+
+/// A container whose `base` lane holds the bare HEAD branch, synced once.
+fn linked_container() -> ContainerFixture {
+    let fixture = ContainerFixture::new(&["lane"]);
+    let container = fixture.container.path();
+    let output = Command::new("git")
+        .current_dir(container)
+        .args(["symbolic-ref", "--short", "HEAD"])
+        .output()
+        .unwrap();
+    let branch = String::from_utf8(output.stdout).unwrap();
+    run_git(
+        container,
+        &["worktree", "add", "--quiet", "base", branch.trim()],
+    );
+    let sync = Command::new(env!("CARGO_BIN_EXE_agent-skills"))
+        .arg("--project")
+        .arg(container.join("base"))
+        .arg("--cache-dir")
+        .arg(fixture.cache.path())
+        .args(["--offline", "sync"])
+        .output()
+        .unwrap();
+    assert!(sync.status.success(), "{:?}", sync);
+    fixture
+}
+
+fn link_command(project: &std::path::Path) -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_agent-skills"));
+    command.arg("--project").arg(project).arg("link");
+    command
+}
+
+#[test]
+fn link_points_the_container_root_at_the_base_worktree() {
+    let fixture = linked_container();
+    let container = fixture.container.path();
+
+    let output = link_command(container).output().unwrap();
+    assert!(output.status.success(), "{:?}", output);
+    for directory in [".agents/skills", ".claude/skills"] {
+        let path = container.join(directory);
+        assert_eq!(
+            std::fs::read_link(&path).unwrap(),
+            std::path::Path::new("../base").join(directory)
+        );
+        // The root reads the base worktree's published skill through the link.
+        assert!(path.join("sample/SKILL.md").is_file());
+    }
+    // The root receives no projection state of its own.
+    assert!(!container.join(".agents/skills-state.json").exists());
+
+    let again = link_command(container).output().unwrap();
+    assert!(again.status.success(), "{:?}", again);
+    assert_eq!(
+        String::from_utf8_lossy(&again.stdout),
+        "Container links are up to date.\n"
+    );
+    let check = link_command(container).arg("--check").output().unwrap();
+    assert!(check.status.success(), "{:?}", check);
+}
+
+#[test]
+fn link_runs_from_any_lane_of_the_container() {
+    let fixture = linked_container();
+    let container = fixture.container.path();
+    let output = link_command(&container.join("lane")).output().unwrap();
+    assert!(output.status.success(), "{:?}", output);
+    assert!(container.join(".agents/skills/sample/SKILL.md").is_file());
+}
+
+#[test]
+fn link_moves_a_link_that_points_at_another_lane() {
+    let fixture = linked_container();
+    let container = fixture.container.path();
+    std::fs::create_dir_all(container.join(".agents")).unwrap();
+    std::os::unix::fs::symlink("../lane/.agents/skills", container.join(".agents/skills")).unwrap();
+    let output = link_command(container).output().unwrap();
+    assert!(output.status.success(), "{:?}", output);
+    assert_eq!(
+        std::fs::read_link(container.join(".agents/skills")).unwrap(),
+        std::path::Path::new("../base/.agents/skills")
+    );
+}
+
+#[test]
+fn link_check_reports_a_missing_link_without_writing() {
+    let fixture = linked_container();
+    let container = fixture.container.path();
+    let output = link_command(container).arg("--check").output().unwrap();
+    assert_eq!(output.status.code(), Some(5), "{:?}", output);
+    assert!(!container.join(".agents/skills").exists());
+}
+
+#[test]
+fn link_never_replaces_a_real_directory_in_the_root() {
+    let fixture = linked_container();
+    let container = fixture.container.path();
+    std::fs::create_dir_all(container.join(".claude/skills/mine")).unwrap();
+    let output = link_command(container).output().unwrap();
+    assert_eq!(output.status.code(), Some(4), "{:?}", output);
+    assert!(container.join(".claude/skills/mine").is_dir());
+    // The command decides every link before the first write.
+    assert!(!container.join(".agents/skills").exists());
+}
+
+#[test]
+fn link_accepts_an_explicit_base_worktree() {
+    let fixture = linked_container();
+    let container = fixture.container.path();
+    let sync = Command::new(env!("CARGO_BIN_EXE_agent-skills"))
+        .arg("--project")
+        .arg(container.join("lane"))
+        .arg("--cache-dir")
+        .arg(fixture.cache.path())
+        .args(["--offline", "sync"])
+        .output()
+        .unwrap();
+    assert!(sync.status.success(), "{:?}", sync);
+    let output = link_command(container)
+        .arg("--base")
+        .arg(container.join("lane"))
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{:?}", output);
+    assert_eq!(
+        std::fs::read_link(container.join(".agents/skills")).unwrap(),
+        std::path::Path::new("../lane/.agents/skills")
+    );
+}
+
+#[test]
+fn link_outside_a_container_is_refused() {
+    let fixture = CliFixture::new();
+    let output = link_command(fixture.project.path()).output().unwrap();
+    assert_eq!(output.status.code(), Some(2), "{:?}", output);
+}
