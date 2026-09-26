@@ -2,6 +2,20 @@
 
 This file records changes for each release.
 
+## [0.4.0](https://github.com/solcik/agents-manifest/compare/v0.3.0...v0.4.0) - 2026-09-26
+
+### Added
+
+- **cli:** link a worktree container root to its base worktree ([#12](https://github.com/solcik/agents-manifest/pull/12))
+
+
+
+
+### Contributors
+
+- @davidsolc-ai
+
+
 ## [0.3.0](https://github.com/solcik/agents-manifest/compare/v0.2.0...v0.3.0) - 2026-09-19
 
 ### Added
