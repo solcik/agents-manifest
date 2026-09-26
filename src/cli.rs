@@ -1,4 +1,5 @@
 use crate::{
+    container::{self, Container, LinkChange, LinkReport},
     error::{Error, IoContext, Result},
     manifest::{Manifest, ValidatedManifest},
     plan::{Plan, Planner, Report},
@@ -69,6 +70,18 @@ pub enum Command {
     Sync,
     /// Detect generated content or ownership drift.
     Check,
+    /// Link a worktree container root to the skills of its base worktree.
+    ///
+    /// Run it from the container root or any of its worktrees.
+    /// It needs no manifest: the base worktree's own sync fills the linked directories.
+    Link {
+        /// Select the base worktree instead of the default-branch worktree.
+        #[arg(long)]
+        base: Option<PathBuf>,
+        /// Report missing or stale links as drift instead of fixing them.
+        #[arg(long)]
+        check: bool,
+    },
     /// Generate shell completions.
     Completions { shell: clap_complete::Shell },
 }
@@ -91,6 +104,9 @@ impl Cli {
         let root = fs::canonicalize(&self.project).context("resolve project directory")?;
         if !root.is_dir() {
             return Err(Error::Invalid("project: require a directory".into()));
+        }
+        if let Command::Link { base, check } = &self.command {
+            return self.link(&root, base.as_deref(), *check);
         }
         let path = match &self.command {
             Command::Validate {
@@ -180,6 +196,73 @@ impl Cli {
             .check(check)
             .build()?;
         Ok((lock, plan))
+    }
+
+    /// Point the container root's skill directories at the base worktree.
+    ///
+    /// The command decides every link before it writes the first one.
+    fn link(&self, project: &Path, base: Option<&Path>, check: bool) -> Result<()> {
+        let container = Container::resolve(project, base)?;
+        let mut changes = Vec::new();
+        for link in container.links()? {
+            let observed = container.observe(&link)?;
+            if let Some(action) = container::reconcile(&link, &observed)? {
+                changes.push((action, link));
+            }
+        }
+        if !check {
+            for (_, link) in &changes {
+                container.apply(link)?;
+            }
+        }
+        let report = LinkReport {
+            version: 1,
+            container: container.root().to_path_buf(),
+            base: container.base().to_path_buf(),
+            changes: changes
+                .into_iter()
+                .map(|(action, link)| LinkChange {
+                    action,
+                    path: link.path,
+                    target: link.target,
+                })
+                .collect(),
+        };
+        self.write_link_report(&report)?;
+        if check && !report.changes.is_empty() {
+            return Err(Error::Drift(format!(
+                "link: {} container links differ",
+                report.changes.len()
+            )));
+        }
+        Ok(())
+    }
+
+    fn write_link_report(&self, report: &LinkReport) -> Result<()> {
+        if self.quiet {
+            return Ok(());
+        }
+        let mut stdout = io::BufWriter::new(io::stdout().lock());
+        if self.json {
+            let bytes = serde_json::to_vec(report)
+                .map_err(|_| Error::Internal("cannot encode JSON report".into()))?;
+            stdout.write_all(&bytes).context("write JSON report")?;
+            writeln!(stdout).context("write JSON report separator")?;
+        } else if report.changes.is_empty() {
+            writeln!(stdout, "Container links are up to date.").context("write link summary")?;
+        } else {
+            for change in &report.changes {
+                writeln!(
+                    stdout,
+                    "{} {} -> {}",
+                    action_label(&change.action),
+                    change.path,
+                    change.target.display()
+                )
+                .context("write link change")?;
+            }
+        }
+        stdout.flush().context("flush link report")
     }
 
     fn write_validation(&self) -> Result<()> {

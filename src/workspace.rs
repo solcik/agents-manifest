@@ -69,28 +69,56 @@ impl Workspace {
     }
 }
 
+/// One checked-out worktree of a `git worktree list --porcelain` listing.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WorktreeRecord {
+    pub path: String,
+    /// The short branch name, or `None` for a detached HEAD.
+    pub branch: Option<String>,
+}
+
 /// Collect the working-tree paths of a `git worktree list --porcelain` listing.
+fn parse_worktree_records(listing: &str) -> Vec<String> {
+    parse_worktree_list(listing)
+        .into_iter()
+        .map(|record| record.path)
+        .collect()
+}
+
+/// Collect the checked-out worktrees of a `git worktree list --porcelain` listing.
 ///
 /// A record starts with a `worktree` attribute and ends at a blank line.
 /// A `bare` attribute marks a record without a working tree.
-fn parse_worktree_records(listing: &str) -> Vec<String> {
-    let mut paths = Vec::new();
-    let mut current: Option<String> = None;
+pub fn parse_worktree_list(listing: &str) -> Vec<WorktreeRecord> {
+    let mut records = Vec::new();
+    let mut current: Option<WorktreeRecord> = None;
     for line in listing.lines() {
         if let Some(path) = line.strip_prefix("worktree ") {
-            current = Some(path.to_owned());
+            current = Some(WorktreeRecord {
+                path: path.to_owned(),
+                branch: None,
+            });
         } else if line == "bare" {
             current = None;
-        } else if line.is_empty()
-            && let Some(path) = current.take()
+        } else if let Some(branch) = line.strip_prefix("branch ")
+            && let Some(record) = current.as_mut()
         {
-            paths.push(path);
+            record.branch = Some(
+                branch
+                    .strip_prefix("refs/heads/")
+                    .unwrap_or(branch)
+                    .to_owned(),
+            );
+        } else if line.is_empty()
+            && let Some(record) = current.take()
+        {
+            records.push(record);
         }
     }
-    if let Some(path) = current {
-        paths.push(path);
+    if let Some(record) = current {
+        records.push(record);
     }
-    paths
+    records
 }
 
 #[cfg(test)]
@@ -116,6 +144,17 @@ mod tests {
             parse_worktree_records(listing),
             vec!["/repo/main".to_owned(), "/repo/review".to_owned()]
         );
+    }
+
+    #[test]
+    fn records_the_short_branch_of_each_worktree() {
+        let listing = "worktree /repo/.bare\nbare\n\n\
+                       worktree /repo/main\nHEAD abc\nbranch refs/heads/main\n\n\
+                       worktree /repo/review\nHEAD def\ndetached\n";
+        let records = parse_worktree_list(listing);
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].branch.as_deref(), Some("main"));
+        assert_eq!(records[1].branch, None);
     }
 
     #[test]

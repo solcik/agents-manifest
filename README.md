@@ -45,6 +45,23 @@ It publishes the same skills into each checked-out worktree.
 The bare entry carries no working tree, so the command skips it.
 Omit `--worktrees` to publish into one selected lane only.
 
+A harness can also start in the container root itself.
+The root is not a worktree, so it receives no projection.
+Link it to the base worktree instead:
+
+```sh
+agent-skills link
+```
+
+Run the command from the root or from any lane.
+It links `.agents/skills` and `.claude/skills` in the root to the same directories in the base worktree.
+The base worktree holds the remote default branch, or else the branch of the bare `HEAD`.
+Use `--base <worktree>` to select another lane.
+The links are relative, so they stay valid on another mount path.
+A later `sync` in the base worktree updates the root through the links.
+`link --check` returns 5 if a link is missing or points elsewhere.
+The command never replaces a real directory in the root. It returns 4 instead.
+
 `validate` checks declarations without Git, network access, or cache creation.
 `plan` resolves sources without project writes.
 `sync` publishes the validated plan.
