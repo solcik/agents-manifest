@@ -2,6 +2,22 @@
 
 This file records changes for each release.
 
+## [0.5.0](https://github.com/solcik/agents-manifest/compare/v0.4.0...v0.5.0) - 2026-09-29
+
+### Added
+
+- publish four native agent-skills archives ([#14](https://github.com/solcik/agents-manifest/pull/14))
+
+- preview and lock upstream skill updates ([#15](https://github.com/solcik/agents-manifest/pull/15))
+
+
+
+
+### Contributors
+
+- @davidsolc-ai
+
+
 ## [0.4.0](https://github.com/solcik/agents-manifest/compare/v0.3.0...v0.4.0) - 2026-09-26
 
 ### Added
