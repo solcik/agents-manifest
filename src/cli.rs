@@ -1,10 +1,12 @@
 use crate::{
     container::{self, Container, LinkChange, LinkReport},
     error::{Error, IoContext, Result},
-    manifest::{Manifest, ValidatedManifest},
+    manifest::ValidatedManifest,
     plan::{Plan, Planner, Report},
-    source::{GitMode, GitOptions, GitSource, default_cache},
+    selectors::{self, LoadMode, LockedSource},
+    source::{GitMode, GitOptions, GitSource, Source, default_cache},
     transaction::{ProjectLock, ProjectReadLock, Transaction},
+    updates,
     workspace::Workspace,
 };
 use clap::{CommandFactory, Parser, Subcommand};
@@ -82,8 +84,28 @@ pub enum Command {
         #[arg(long)]
         check: bool,
     },
+    /// Review upstream HEAD commits or update one reviewed skill pin.
+    Updates {
+        #[command(subcommand)]
+        command: UpdateCommand,
+    },
     /// Generate shell completions.
     Completions { shell: clap_complete::Shell },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum UpdateCommand {
+    /// Show changed skills and upstream compare links without project writes.
+    Preview,
+    /// Update one skill to an exact reviewed commit.
+    Apply {
+        #[arg(long)]
+        skill: String,
+        #[arg(long)]
+        from: Option<String>,
+        #[arg(long)]
+        to: String,
+    },
 }
 
 impl Cli {
@@ -114,9 +136,73 @@ impl Cli {
             } => root.join(path),
             _ => root.join(&self.manifest),
         };
-        let input = Manifest::load(&path)?;
+        let mode = match self.command {
+            Command::Validate { .. } => LoadMode::Validate,
+            Command::Updates { .. } => LoadMode::Preview,
+            _ => LoadMode::Locked,
+        };
+        let loaded = selectors::load(&path, mode)?;
         if matches!(self.command, Command::Validate { .. }) {
             return self.write_validation();
+        }
+        if let Command::Updates { command } = &self.command {
+            if self.worktrees {
+                return Err(Error::Invalid("updates: --worktrees is unsupported".into()));
+            }
+            let source = GitSource::new(GitOptions {
+                cache: self
+                    .cache_dir
+                    .clone()
+                    .map(Ok)
+                    .unwrap_or_else(default_cache)?,
+                offline: self.offline,
+                mode: self.git_mode,
+                timeout: Duration::from_secs(self.timeout),
+            });
+            match command {
+                UpdateCommand::Preview => {
+                    let preview = updates::preview(&loaded, &source)?;
+                    if !self.quiet {
+                        if self.json {
+                            serde_json::to_writer(io::stdout().lock(), &preview).map_err(|_| {
+                                Error::Internal("cannot encode update preview".into())
+                            })?;
+                            println!();
+                        } else {
+                            for item in preview.updates {
+                                println!(
+                                    "{}: {} ({} -> {})",
+                                    item.name,
+                                    item.status,
+                                    item.pinned.as_deref().unwrap_or("unlocked"),
+                                    item.target
+                                );
+                                if let Some(compare) = item.compare {
+                                    println!("  {compare}");
+                                }
+                            }
+                        }
+                    }
+                }
+                UpdateCommand::Apply { skill, from, to } => {
+                    let _lock = ProjectLock::acquire(&root)?;
+                    updates::apply_selected(&path, &loaded, &source, skill, from.as_deref(), to)?;
+                    if !self.quiet {
+                        if self.json {
+                            println!(
+                                "{}",
+                                serde_json::json!({"version":1,"skill":skill,"from":from,"to":to})
+                            );
+                        } else {
+                            println!(
+                                "Updated {skill}: {} -> {to}",
+                                from.as_deref().unwrap_or("unlocked")
+                            );
+                        }
+                    }
+                }
+            }
+            return Ok(());
         }
         let workspace = if self.worktrees {
             Workspace::worktrees(&root)?
@@ -133,13 +219,19 @@ impl Cli {
             mode: self.git_mode,
             timeout: Duration::from_secs(self.timeout),
         });
+        let locked_source = LockedSource {
+            source: &source,
+            lock: &loaded.lock,
+            selectors: &loaded.selectors,
+        };
+        let input = &loaded.manifest;
         let check = matches!(self.command, Command::Check);
         let sync = matches!(self.command, Command::Sync);
         // Resolve and validate every root before the first write.
         // A partially published set of worktrees is worse than a refused one.
         let mut prepared = Vec::with_capacity(workspace.roots().len());
         for project in workspace.roots() {
-            prepared.push(self.prepare(project, &input, &source, check, sync)?);
+            prepared.push(self.prepare(project, input, &locked_source, check, sync)?);
         }
         for (lock, plan) in &prepared {
             if let Some(lock) = lock {
@@ -170,11 +262,11 @@ impl Cli {
     ///
     /// The returned lock stays alive until publication finishes.
     /// A command that does not publish holds a shared read lock for its own scope.
-    fn prepare(
+    fn prepare<S: Source>(
         &self,
         project: &Path,
         input: &ValidatedManifest,
-        source: &GitSource,
+        source: &S,
         check: bool,
         sync: bool,
     ) -> Result<(Option<ProjectLock>, Plan)> {

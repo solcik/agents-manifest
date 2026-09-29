@@ -48,3 +48,22 @@ fn schema_rejects_unknown_fields_unpinned_revisions_and_unsafe_paths() {
     value["skills"][0]["activation"] = "always".into();
     assert!(!validator.is_valid(&value));
 }
+
+#[test]
+fn schema_accepts_one_skill_selector_at_a_time() {
+    let validator = validator();
+    for field in ["branch", "tag", "version"] {
+        let mut value = example();
+        value["skills"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("revision");
+        value["skills"][0][field] = "main".into();
+        assert!(validator.is_valid(&value), "rejected {field}");
+        value["skills"][0]["revision"] = "a".repeat(40).into();
+        assert!(
+            !validator.is_valid(&value),
+            "accepted two selectors: {field}"
+        );
+    }
+}

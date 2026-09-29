@@ -75,8 +75,13 @@
       "required": [
         "name",
         "source",
-        "revision",
         "path"
+      ],
+      "oneOf": [
+        {"required": ["revision"]},
+        {"required": ["branch"]},
+        {"required": ["tag"]},
+        {"required": ["version"]}
       ],
       "properties": {
         "name": {
@@ -90,6 +95,9 @@
         "revision": {
           "$ref": "#/$defs/revision"
         },
+        "branch": {"type": "string", "minLength": 1},
+        "tag": {"type": "string", "minLength": 1},
+        "version": {"type": "string", "minLength": 1},
         "path": {
           "$ref": "#/$defs/path"
         },
