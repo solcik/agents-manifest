@@ -6,6 +6,7 @@
 - [Contribution guide](../CONTRIBUTING.md)
 - [Agent instructions](../AGENTS.md)
 - [Project skills](project-skills.md)
+- [Ubuntu installation and project setup](ubuntu-installation.md)
 - [Release guide](releases.md)
 
 ## Reference and design
