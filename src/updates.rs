@@ -1,6 +1,7 @@
 use crate::{
     error::{Error, IoContext, Result},
     manifest::{MAX_MANIFEST, Manifest, Skill, SourceReference, ValidatedManifest},
+    selectors::{self, Loaded, Selector},
     source::Source,
 };
 use serde::Serialize;
@@ -8,11 +9,15 @@ use std::{collections::BTreeMap, fs, io::Write, path::Path};
 
 pub trait UpdateSource: Source {
     fn head(&self, source: &str) -> Result<String>;
+    fn selected(&self, source: &str, selector: &Selector) -> Result<String>;
 }
 
 impl UpdateSource for crate::source::GitSource {
     fn head(&self, source: &str) -> Result<String> {
         self.head(source)
+    }
+    fn selected(&self, source: &str, selector: &Selector) -> Result<String> {
+        selectors::resolve(self, source, selector)
     }
 }
 
@@ -20,7 +25,7 @@ impl UpdateSource for crate::source::GitSource {
 pub struct Update {
     pub name: String,
     pub source: String,
-    pub pinned: String,
+    pub pinned: Option<String>,
     pub target: String,
     pub status: &'static str,
     pub compare: Option<String>,
@@ -32,18 +37,40 @@ pub struct Preview {
     pub updates: Vec<Update>,
 }
 
-pub fn preview(manifest: &ValidatedManifest, source: &impl UpdateSource) -> Result<Preview> {
+pub fn preview(loaded: &Loaded, source: &impl UpdateSource) -> Result<Preview> {
     let mut heads = BTreeMap::new();
     let mut updates = Vec::new();
-    for skill in &manifest.manifest.skills {
+    for skill in &loaded.manifest.manifest.skills {
         let reference = &skill.reference;
+        let selector = loaded.selectors.get(&skill.name);
+        let key = (reference.source().to_owned(), selector.cloned());
         let target = heads
-            .entry(reference.source().to_owned())
-            .or_insert_with(|| source.head(reference.source()))
+            .entry(key)
+            .or_insert_with(|| match selector {
+                Some(selector) => source.selected(reference.source(), selector),
+                None => source.head(reference.source()),
+            })
             .as_ref()
             .map_err(|error| Error::Source(error.to_string()))?;
-        let status = if target == reference.revision() {
-            "current"
+        let pinned = if selector.is_some() {
+            loaded
+                .lock
+                .skills
+                .get(&skill.name)
+                .map(|pin| pin.revision.clone())
+        } else {
+            Some(reference.revision().to_owned())
+        };
+        let status = if pinned.is_none() {
+            match source.skill(&target_skill(skill, target)?) {
+                Ok(_) => "unlocked",
+                Err(_) => "unavailable",
+            }
+        } else if target == reference.revision() {
+            match source.skill(skill) {
+                Ok(_) => "current",
+                Err(_) => "unavailable",
+            }
         } else {
             let next = target_skill(skill, target)?;
             match source.skill(&next) {
@@ -60,10 +87,12 @@ pub fn preview(manifest: &ValidatedManifest, source: &impl UpdateSource) -> Resu
         updates.push(Update {
             name: skill.name.clone(),
             source: reference.source().to_owned(),
-            pinned: reference.revision().to_owned(),
+            pinned: pinned.clone(),
             target: target.clone(),
             status,
-            compare: github_compare(reference.source(), reference.revision(), target),
+            compare: pinned
+                .as_deref()
+                .and_then(|from| github_compare(reference.source(), from, target)),
         });
     }
     Ok(Preview {
@@ -155,6 +184,68 @@ pub fn apply(
         source: error.error,
     })?;
     Ok(())
+}
+
+pub fn apply_selected<S: UpdateSource>(
+    path: &Path,
+    loaded: &Loaded,
+    source: &S,
+    name: &str,
+    from: Option<&str>,
+    to: &str,
+) -> Result<()> {
+    let Some(selector) = loaded.selectors.get(name) else {
+        let from = from.ok_or_else(|| {
+            Error::Invalid("updates: --from is required for revision pins".into())
+        })?;
+        return apply(path, &loaded.manifest, source, name, from, to);
+    };
+    let skill = loaded
+        .manifest
+        .manifest
+        .skills
+        .iter()
+        .find(|skill| skill.name == name)
+        .ok_or_else(|| Error::Invalid("updates: selected skill is not declared".into()))?;
+    let previous = loaded.lock.skills.get(name);
+    if previous.map(|pin| pin.revision.as_str()) != from {
+        return Err(Error::Conflict(
+            "updates: locked revision changed since review".into(),
+        ));
+    }
+    if previous.is_some_and(|pin| pin.revision == to) {
+        return Err(Error::Invalid(
+            "updates: target matches the locked revision".into(),
+        ));
+    }
+    let target = source.selected(skill.reference.source(), selector)?;
+    if target != to {
+        return Err(Error::Conflict(
+            "updates: selector target changed since review".into(),
+        ));
+    }
+    let tree = source.skill(&target_skill(skill, to)?)?;
+    let mut lock = loaded.lock.clone();
+    lock.skills
+        .retain(|name, _| loaded.selectors.contains_key(name));
+    lock.skills.insert(
+        name.to_owned(),
+        selectors::LockedPin {
+            source: skill.reference.source().to_owned(),
+            path: skill.reference.path().to_owned(),
+            selector: selector.clone(),
+            revision: to.to_owned(),
+            hash: tree.fingerprint().hash,
+        },
+    );
+    if fs::read(path).context("recheck manifest before lock update")? != loaded.raw
+        || selectors::current_lock(path)? != loaded.lock
+    {
+        return Err(Error::Conflict(
+            "updates: manifest or lockfile changed during update".into(),
+        ));
+    }
+    selectors::write_lock(path, &lock)
 }
 
 fn target_skill(skill: &Skill, revision: &str) -> Result<Skill> {
@@ -291,6 +382,9 @@ mod tests {
             self.calls.lock().unwrap().push(source.into());
             Ok(self.heads[source].clone())
         }
+        fn selected(&self, source: &str, _: &Selector) -> Result<String> {
+            self.head(source)
+        }
     }
 
     fn manifest() -> ValidatedManifest {
@@ -318,7 +412,16 @@ mod tests {
             heads,
             calls: Mutex::new(Vec::new()),
         };
-        let result = preview(&manifest(), &source).unwrap();
+        let loaded = Loaded {
+            raw: Vec::new(),
+            manifest: manifest(),
+            selectors: BTreeMap::new(),
+            lock: selectors::Lockfile {
+                version: 1,
+                ..selectors::Lockfile::default()
+            },
+        };
+        let result = preview(&loaded, &source).unwrap();
         assert_eq!(source.calls.lock().unwrap().len(), 2);
         assert_eq!(
             result
@@ -396,5 +499,26 @@ mod tests {
             fs::read_to_string(&path).unwrap(),
             original.replace(&"a".repeat(40), &"b".repeat(40))
         );
+    }
+
+    #[test]
+    fn selector_apply_creates_a_lock_without_rewriting_yaml() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("skills.yaml");
+        let manifest = "# keep this comment\nversion: 1\ntargets: [codex]\nskills:\n  - name: sample\n    source: https://github.com/example/repo.git\n    branch: main\n    path: sample\n";
+        fs::write(&path, manifest).unwrap();
+        let loaded = selectors::load(&path, selectors::LoadMode::Preview).unwrap();
+        let source = FakeSource {
+            heads: BTreeMap::from([("https://github.com/example/repo.git".into(), "a".repeat(40))]),
+            calls: Mutex::new(Vec::new()),
+        };
+        assert!(apply_selected(&path, &loaded, &source, "sample", None, &"b".repeat(40)).is_err());
+        assert!(!directory.path().join(selectors::LOCKFILE).exists());
+        apply_selected(&path, &loaded, &source, "sample", None, &"a".repeat(40)).unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), manifest);
+        let locked = selectors::load(&path, selectors::LoadMode::Locked).unwrap();
+        assert_eq!(locked.lock.skills["sample"].revision, "a".repeat(40));
+        assert_eq!(locked.lock.skills["sample"].hash.len(), 64);
+        assert!(apply_selected(&path, &locked, &source, "sample", None, &"a".repeat(40)).is_err());
     }
 }

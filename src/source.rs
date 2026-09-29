@@ -72,30 +72,41 @@ impl GitSource {
     }
 
     pub fn head(&self, source: &str) -> Result<String> {
+        let refs = self.list_refs(source, &["HEAD"])?;
+        refs.get("HEAD")
+            .cloned()
+            .ok_or_else(|| Error::Source("updates: upstream HEAD is unavailable".into()))
+    }
+
+    pub fn list_refs(&self, source: &str, patterns: &[&str]) -> Result<BTreeMap<String, String>> {
         if self.options.offline {
             return Err(Error::Source(
-                "updates: upstream HEAD requires network access".into(),
+                "updates: upstream refs require network access".into(),
             ));
         }
         let mut command = self.command(&self.options.cache, Some(source))?;
-        // ls-remote does not need a local repository or a source checkout.
+        // ls-remote does not need a local repository or source checkout.
         command
             .current_dir(".")
-            .args(["ls-remote", "--exit-code", source, "HEAD"]);
+            .args(["ls-remote", source])
+            .args(patterns);
         let bytes = self.run(command, None)?;
-        let line = std::str::from_utf8(&bytes)
-            .map_err(|_| Error::Source("updates: invalid upstream HEAD".into()))?;
-        let (revision, reference) = line
-            .trim_end()
-            .split_once('\t')
-            .ok_or_else(|| Error::Source("updates: invalid upstream HEAD".into()))?;
-        if reference != "HEAD"
-            || !matches!(revision.len(), 40 | 64)
-            || !revision.bytes().all(|byte| byte.is_ascii_hexdigit())
-        {
-            return Err(Error::Source("updates: invalid upstream HEAD".into()));
+        let text = std::str::from_utf8(&bytes)
+            .map_err(|_| Error::Source("updates: invalid upstream refs".into()))?;
+        let mut refs = BTreeMap::new();
+        for line in text.lines() {
+            let (revision, reference) = line
+                .split_once('\t')
+                .ok_or_else(|| Error::Source("updates: invalid upstream refs".into()))?;
+            if !matches!(revision.len(), 40 | 64)
+                || !revision.bytes().all(|byte| byte.is_ascii_hexdigit())
+                || !reference.starts_with("refs/") && reference != "HEAD"
+            {
+                return Err(Error::Source("updates: invalid upstream refs".into()));
+            }
+            refs.insert(reference.to_owned(), revision.to_ascii_lowercase());
         }
-        Ok(revision.to_ascii_lowercase())
+        Ok(refs)
     }
     fn command(&self, directory: &Path, remote: Option<&str>) -> Result<Command> {
         let mut command = Command::new("git");

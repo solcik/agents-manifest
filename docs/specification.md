@@ -13,8 +13,9 @@ The existing `solcik/agent-skills` repository remains the curated content source
 The public CLI repository is `solcik/agents-manifest`.
 
 The project tracks `.agents/skills.yaml` and local `.agents/skills/<name>` directories.
-The manifest contains every external dependency and its immutable Git commit.
-The project does not track downloaded content or a separate dependency lockfile.
+The manifest contains immutable commits or selectors for external skills.
+Selector manifests track resolved commits in `.agents/skills-lock.json`.
+The project does not track downloaded content.
 The selected root can be a Git worktree, HOME, or an ordinary temporary directory.
 Git roots retain tracking checks for generated paths.
 Ordinary directories retain ownership, locking, and recovery checks without Git tracking.
@@ -27,7 +28,18 @@ Version one requires `version`, `targets`, and `skills`.
 The optional `bundles` field contains pinned bundle references.
 Unknown fields fail validation.
 
-Each skill declares `name`, `source`, `revision`, and `path`.
+Each skill declares `name`, `source`, `path`, and one revision selector.
+The selector is `revision`, `branch`, `tag`, or `version`.
+`version` accepts a SemVer requirement such as `^1.2`.
+It selects the highest matching tag, with or without a leading `v`.
+Annotated tags resolve to their peeled commits.
+`branch` selects a named upstream branch.
+`tag` selects one named upstream tag.
+The tracked lockfile records each selector, source, path, exact commit, and BLAKE3 skill tree hash.
+`plan`, `sync`, and `check` require complete matching locks for selector skills.
+These commands verify locked tree hashes before they publish content.
+`validate` checks selector syntax without a lockfile or network access.
+Bundle references still require exact revisions.
 Each bundle declares `source`, `revision`, and `path`.
 Sources use complete HTTPS or SSH Git URLs.
 Revisions use complete 40-character or 64-character hexadecimal commit identifiers.
@@ -135,21 +147,26 @@ Ownership metadata updates only after all projections succeed.
 `agent-skills link` links a container root to its base worktree; `link --check` reports drift.
 
 `agent-skills updates preview` reads each skill source's current default branch HEAD.
+Selector skills use their declared branch, tag, or SemVer range instead.
 It compares the pinned and target skill trees without changing project files.
-The preview reports changed, unchanged, current, and unavailable skill paths.
+The preview reports changed, unchanged, current, unlocked, and unavailable skill paths.
 It includes a GitHub compare link when the source uses a GitHub repository URL.
 Other Git hosts receive no compare link.
-The preview queries each distinct source once.
+The preview queries each distinct source and selector pair once.
 The preview requires network access and rejects `--offline`.
 
 `agent-skills updates apply --skill NAME --from PIN --to COMMIT` updates one reviewed skill pin.
-The command requires the current pin to match `--from`.
-It validates the selected skill at `--to` before changing the manifest.
-It edits only the selected revision scalar and preserves surrounding YAML text.
+For selector skills, the command updates `.agents/skills-lock.json` instead of the manifest.
+For the first selector lock, omit `--from`.
+For later selector updates, provide the locked commit as `--from`.
+The command refuses a target that differs from the selector's current upstream result.
+For revision pins, the command requires the current pin to match `--from`.
+It validates the selected skill at `--to` before changing the manifest or lockfile.
+For revision pins, it edits only the selected revision scalar and preserves surrounding YAML text.
 Unsupported YAML layouts fail without a manifest rewrite.
-The command writes the manifest through an atomic replacement.
+The command writes the manifest or lockfile through an atomic replacement.
 Run `agent-skills sync` after a pin update to publish the new skill content.
-The updates commands reject `--worktrees` because they edit one manifest.
+The updates commands reject `--worktrees` because they use one manifest.
 
 Success returns exit status 0.
 Invalid declarations return 2.

@@ -11,6 +11,11 @@ The output includes GitHub compare links for GitHub sources.
 If a selected change passes review, copy its commits into `agent-skills updates apply --skill NAME --from PIN --to COMMIT`.
 Run one apply command for each selected skill.
 The apply command keeps comments and unrelated YAML formatting.
+Use `branch`, `tag`, or `version` instead of `revision` to follow an upstream selector.
+The first apply for a selector omits `--from` and creates `.agents/skills-lock.json`.
+Commit that lockfile with the manifest.
+Later applies use the old locked commit as `--from`.
+The lockfile keeps normal syncs on exact commits and verifies skill tree hashes.
 Run the sync task after the pin updates.
 
 Run `direnv exec . devenv tasks run skills:sync` to retrieve and publish the declared skill.
