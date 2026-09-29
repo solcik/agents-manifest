@@ -12,8 +12,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        rust: [stable, "1.89"]
-    runs-on: ubuntu-latest
+        include:
+          - { os: ubuntu-22.04, rust: stable }
+          - { os: ubuntu-22.04, rust: "1.89" }
+          - { os: ubuntu-22.04-arm, rust: stable }
+          - { os: ubuntu-24.04, rust: stable }
+          - { os: ubuntu-24.04-arm, rust: stable }
+          - { os: macos-15-intel, rust: stable }
+          - { os: macos-15, rust: stable }
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
         with:

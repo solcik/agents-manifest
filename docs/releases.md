@@ -20,8 +20,11 @@ Without the secret the job falls back to `github.token`.
 A maintainer then approves each run from the pull request page.
 
 Automation creates the version tag and a draft GitHub release.
-The reusable binary workflow runs formatting, Clippy, and tests.
-It builds the Linux binary and generates SHA256SUMS.
+The reusable binary workflow runs formatting, Clippy, and tests on four native targets.
+It builds Linux x86-64 and ARM64 binaries on Ubuntu 22.04.
+It builds macOS Intel and Apple silicon binaries on macOS 15.
+It runs the Linux archives on Ubuntu 24.04 before publication.
+It generates SHA256SUMS and build attestations for the archives.
 It publishes the draft after all checks pass.
 No workflow automatically merges release PRs.
 
@@ -86,11 +89,12 @@ GitHub also does not start `pull_request_target` for a pull request that GitHub 
 A required check on that event stays unreported and blocks every release pull request.
 The release workflow therefore calls the binary workflow directly.
 Action references use version tags.
-Release assets currently target Linux only.
+Release assets target Linux x86-64, Linux ARM64, macOS Intel, and macOS Apple silicon.
+Release v0.4.0 predates this matrix and contains only Linux x86-64.
 The repository does not use a second version or changelog engine.
 `commitlint` requires a separate Node development toolchain and duplicates the selected commit checks.
-`cargo-dist` remains deferred until the project needs installers or additional distribution targets.
-The current binary workflow publishes one Linux archive and checksums.
+`cargo-dist` remains deferred while one native matrix handles the supported targets.
+The binary workflow publishes four archives, checksums, and build attestations.
 After these workflows merge, add `Validate PR title` and `Validate commit messages` to the required branch checks.
 
 ## Failed publication

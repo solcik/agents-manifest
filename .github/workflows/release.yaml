@@ -22,7 +22,19 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu }
+          - { os: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu }
+          - { os: macos-15-intel, target: x86_64-apple-darwin }
+          - { os: macos-15, target: aarch64-apple-darwin }
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
       - name: Validate tag
         env:
@@ -46,17 +58,48 @@ jobs:
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo test --locked
       - run: cargo build --locked --release
-      - name: Package native binary
+      - name: Check native binary
         run: |
           target=$(rustc -vV | sed -n 's/^host: //p')
-          tar -czf "agent-skills-$target.tar.gz" -C target/release agent-skills
+          test "$target" = "${{ matrix.target }}"
+          target/release/agent-skills --version
+          target/release/agent-skills validate examples/skills.yaml --json
+      - name: Package native binary
+        run: |
+          tar -czf "agent-skills-${{ matrix.target }}.tar.gz" \
+            -C target/release agent-skills -C "$GITHUB_WORKSPACE" LICENSE
+      - uses: actions/attest@v4
+        with:
+          subject-path: agent-skills-${{ matrix.target }}.tar.gz
       - uses: actions/upload-artifact@v4
         with:
-          name: agent-skills-linux
-          path: agent-skills-*.tar.gz
+          name: agent-skills-${{ matrix.target }}
+          path: agent-skills-${{ matrix.target }}.tar.gz
           if-no-files-found: error
-  publish:
+  compatibility:
     needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04, target: x86_64-unknown-linux-gnu }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: agent-skills-${{ matrix.target }}
+      - name: Check older-Ubuntu binary on newer Ubuntu
+        run: |
+          tar -xzf "agent-skills-${{ matrix.target }}.tar.gz"
+          ./agent-skills --version
+          ./agent-skills validate examples/skills.yaml --json
+  publish:
+    needs: [build, compatibility]
     runs-on: ubuntu-latest
     permissions:
       contents: write

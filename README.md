@@ -2,6 +2,8 @@
 
 `agent-skills` synchronises pinned skill dependencies into project discovery directories.
 
+Install the CLI with the [installation guide](INSTALL.md).
+
 Humans can start with the commands and manifest example below.
 Contributors must read [CONTRIBUTING.md](CONTRIBUTING.md).
 AI agents must read [AGENTS.md](AGENTS.md).
@@ -185,14 +187,14 @@ The [HP notebook verification](docs/post-rebuild-summary.md) records the deploye
 
 ## Release preparation
 
-CI checks Linux with stable Rust and Rust 1.89.
-The release workflow builds Linux binaries only for now.
+CI checks Linux and macOS with stable Rust.
+It checks Rust 1.89 on Ubuntu 22.04.
 GitHub actions use major-version tags instead of commit hashes.
 The Rust toolchain action uses its `stable` branch with an explicit toolchain selection.
 Release-plz prepares a release PR from Conventional Commits.
 The PR contains the version update and generated changelog.
 After approval and merge, automation creates a draft release.
-The binary workflow checks, builds, and publishes the release with SHA256SUMS.
+The binary workflow checks four native targets before publishing archives, SHA256SUMS, and build attestations.
 Read the [release guide](docs/releases.md) for setup, version rules, and retries.
 
 ## Current limits
@@ -202,3 +204,7 @@ Version one supports `on-demand` activation only.
 Discovery imports and Windows support remain separate work.
 
 Read the [specification](docs/specification.md), [implementation plan](docs/implementation-plan.md), and [design notes](docs/architecture.md).
+
+## License
+
+The CLI is available under the [MIT License](LICENSE).
