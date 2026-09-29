@@ -70,26 +70,52 @@ impl GitSource {
             repositories: Mutex::new(BTreeMap::new()),
         }
     }
+
+    pub fn head(&self, source: &str) -> Result<String> {
+        if self.options.offline {
+            return Err(Error::Source(
+                "updates: upstream HEAD requires network access".into(),
+            ));
+        }
+        let mut command = self.command(&self.options.cache, Some(source))?;
+        // ls-remote does not need a local repository or a source checkout.
+        command
+            .current_dir(".")
+            .args(["ls-remote", "--exit-code", source, "HEAD"]);
+        let bytes = self.run(command, None)?;
+        let line = std::str::from_utf8(&bytes)
+            .map_err(|_| Error::Source("updates: invalid upstream HEAD".into()))?;
+        let (revision, reference) = line
+            .trim_end()
+            .split_once('\t')
+            .ok_or_else(|| Error::Source("updates: invalid upstream HEAD".into()))?;
+        if reference != "HEAD"
+            || !matches!(revision.len(), 40 | 64)
+            || !revision.bytes().all(|byte| byte.is_ascii_hexdigit())
+        {
+            return Err(Error::Source("updates: invalid upstream HEAD".into()));
+        }
+        Ok(revision.to_ascii_lowercase())
+    }
     fn command(&self, directory: &Path, remote: Option<&str>) -> Result<Command> {
         let mut command = Command::new("git");
         if let Some(source) = remote {
+            let parsed = url::Url::parse(source)
+                .map_err(|_| Error::Invalid("source: invalid Git URL".into()))?;
+            let scope = match parsed.host_str() {
+                Some("github.com") => Some("github"),
+                Some("git.vs-point.cz") => Some("vspoint"),
+                _ => None,
+            };
             let agent = match self.options.mode {
-                GitMode::Auto => available("git-agent"),
+                GitMode::Auto => available("git-agent") && scope.is_some(),
                 GitMode::Agent => true,
                 GitMode::System => false,
             };
             if agent {
-                let parsed = url::Url::parse(source)
-                    .map_err(|_| Error::Invalid("source: invalid Git URL".into()))?;
-                let scope = match parsed.host_str() {
-                    Some("github.com") => "github",
-                    Some("git.vs-point.cz") => "vspoint",
-                    _ => {
-                        return Err(Error::Source(
-                            "transport: agent wrapper has no scope for this host".into(),
-                        ));
-                    }
-                };
+                let scope = scope.ok_or_else(|| {
+                    Error::Source("transport: agent wrapper has no scope for this host".into())
+                })?;
                 command.args(["agent", &format!("--scope={scope}")]);
             }
         }

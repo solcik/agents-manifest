@@ -6,6 +6,13 @@ The curated repository is private.
 Its SSH URL requires repository access through the configured Git transport.
 Generated content and ownership metadata remain ignored.
 
+Run `agent-skills updates preview` to inspect upstream skill changes.
+The output includes GitHub compare links for GitHub sources.
+If a selected change passes review, copy its commits into `agent-skills updates apply --skill NAME --from PIN --to COMMIT`.
+Run one apply command for each selected skill.
+The apply command keeps comments and unrelated YAML formatting.
+Run the sync task after the pin updates.
+
 Run `direnv exec . devenv tasks run skills:sync` to retrieve and publish the declared skill.
 Run `direnv exec . devenv tasks run skills:check` to verify the cached projection without network access.
 Start a new agent session after synchronisation.

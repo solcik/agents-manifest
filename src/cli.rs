@@ -5,6 +5,7 @@ use crate::{
     plan::{Plan, Planner, Report},
     source::{GitMode, GitOptions, GitSource, default_cache},
     transaction::{ProjectLock, ProjectReadLock, Transaction},
+    updates,
     workspace::Workspace,
 };
 use clap::{CommandFactory, Parser, Subcommand};
@@ -82,8 +83,28 @@ pub enum Command {
         #[arg(long)]
         check: bool,
     },
+    /// Review upstream HEAD commits or update one reviewed skill pin.
+    Updates {
+        #[command(subcommand)]
+        command: UpdateCommand,
+    },
     /// Generate shell completions.
     Completions { shell: clap_complete::Shell },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum UpdateCommand {
+    /// Show changed skills and upstream compare links without project writes.
+    Preview,
+    /// Update one skill to an exact reviewed commit.
+    Apply {
+        #[arg(long)]
+        skill: String,
+        #[arg(long)]
+        from: String,
+        #[arg(long)]
+        to: String,
+    },
 }
 
 impl Cli {
@@ -117,6 +138,59 @@ impl Cli {
         let input = Manifest::load(&path)?;
         if matches!(self.command, Command::Validate { .. }) {
             return self.write_validation();
+        }
+        if let Command::Updates { command } = &self.command {
+            if self.worktrees {
+                return Err(Error::Invalid("updates: --worktrees is unsupported".into()));
+            }
+            let source = GitSource::new(GitOptions {
+                cache: self
+                    .cache_dir
+                    .clone()
+                    .map(Ok)
+                    .unwrap_or_else(default_cache)?,
+                offline: self.offline,
+                mode: self.git_mode,
+                timeout: Duration::from_secs(self.timeout),
+            });
+            match command {
+                UpdateCommand::Preview => {
+                    let preview = updates::preview(&input, &source)?;
+                    if !self.quiet {
+                        if self.json {
+                            serde_json::to_writer(io::stdout().lock(), &preview).map_err(|_| {
+                                Error::Internal("cannot encode update preview".into())
+                            })?;
+                            println!();
+                        } else {
+                            for item in preview.updates {
+                                println!(
+                                    "{}: {} ({} -> {})",
+                                    item.name, item.status, item.pinned, item.target
+                                );
+                                if let Some(compare) = item.compare {
+                                    println!("  {compare}");
+                                }
+                            }
+                        }
+                    }
+                }
+                UpdateCommand::Apply { skill, from, to } => {
+                    let _lock = ProjectLock::acquire(&root)?;
+                    updates::apply(&path, &input, &source, skill, from, to)?;
+                    if !self.quiet {
+                        if self.json {
+                            println!(
+                                "{}",
+                                serde_json::json!({"version":1,"skill":skill,"from":from,"to":to})
+                            );
+                        } else {
+                            println!("Updated {skill}: {from} -> {to}");
+                        }
+                    }
+                }
+            }
+            return Ok(());
         }
         let workspace = if self.worktrees {
             Workspace::worktrees(&root)?

@@ -6,6 +6,7 @@ pub mod manifest;
 pub mod plan;
 pub mod source;
 pub mod transaction;
+pub mod updates;
 pub mod workspace;
 
 #[cfg(test)]

@@ -134,6 +134,23 @@ Ownership metadata updates only after all projections succeed.
 `agent-skills check --offline` requires every pinned source in the local cache.
 `agent-skills link` links a container root to its base worktree; `link --check` reports drift.
 
+`agent-skills updates preview` reads each skill source's current default branch HEAD.
+It compares the pinned and target skill trees without changing project files.
+The preview reports changed, unchanged, current, and unavailable skill paths.
+It includes a GitHub compare link when the source uses a GitHub repository URL.
+Other Git hosts receive no compare link.
+The preview queries each distinct source once.
+The preview requires network access and rejects `--offline`.
+
+`agent-skills updates apply --skill NAME --from PIN --to COMMIT` updates one reviewed skill pin.
+The command requires the current pin to match `--from`.
+It validates the selected skill at `--to` before changing the manifest.
+It edits only the selected revision scalar and preserves surrounding YAML text.
+Unsupported YAML layouts fail without a manifest rewrite.
+The command writes the manifest through an atomic replacement.
+Run `agent-skills sync` after a pin update to publish the new skill content.
+The updates commands reject `--worktrees` because they edit one manifest.
+
 Success returns exit status 0.
 Invalid declarations return 2.
 Source retrieval failures return 3.
