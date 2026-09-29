@@ -150,9 +150,9 @@ Unavailable sources fail the entire operation before publication.
 
 ## Distribution and integration
 
-The first release provides Linux binaries.
-macOS builds remain deferred for now.
-CI builds binaries and publishes checksums after a release request.
+The first releases provide Linux x86-64 binaries.
+The release workflow builds Linux x86-64, Linux ARM64, macOS Intel, and macOS Apple silicon archives.
+It publishes checksums and build attestations after every native build passes.
 Windows support follows filesystem and transport tests.
 Discovery imports and skills.sh integration follow the core synchronisation release.
 Shell entry never downloads skills.

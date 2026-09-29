@@ -2,18 +2,45 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 permissions:
   contents: read
 
 jobs:
+  platform:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-22.04-arm, rust: stable }
+          - { os: ubuntu-24.04, rust: stable }
+          - { os: ubuntu-24.04-arm, rust: stable }
+          - { os: macos-15-intel, rust: stable }
+          - { os: macos-15, rust: stable }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ matrix.rust }}
+          components: rustfmt, clippy
+      - run: cargo fmt --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo test --locked
+      - run: cargo build --locked --release
+      - run: target/release/agent-skills validate examples/skills.yaml --json
+
   test:
+    needs: platform
     strategy:
       fail-fast: false
       matrix:
         rust: [stable, "1.89"]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v7
         with:
