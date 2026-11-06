@@ -303,8 +303,12 @@ impl<'a, S: Source> Planner<'a, S> {
             }
         }
         if input.targets.contains(&Target::Claude) {
-            for name in locals {
-                let tree = Arc::new(read_local_tree(root, &name)?);
+            for name in &locals {
+                // A tracked projection belongs to the repository, not to the CLI.
+                if tracked.contains(&format!(".claude/skills/{name}")) {
+                    continue;
+                }
+                let tree = Arc::new(read_local_tree(root, name)?);
                 total += tree.byte_len();
                 if total > 512 * 1024 * 1024 {
                     return Err(Error::Source(
@@ -327,10 +331,16 @@ impl<'a, S: Source> Planner<'a, S> {
                 .map(|(path, item)| (path.clone(), item.owner.clone()))
                 .collect(),
         };
+        let released = |path: &String| {
+            path.strip_prefix(".claude/skills/").is_some_and(|name| {
+                tracked.contains(path) && locals.binary_search(&name.to_owned()).is_ok()
+            })
+        };
         let paths: BTreeSet<_> = state
             .outputs
             .keys()
             .chain(desired.keys())
+            .filter(|path| !released(path))
             .cloned()
             .collect();
         let snapshots = paths

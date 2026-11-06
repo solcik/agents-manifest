@@ -229,6 +229,36 @@ fn copies_local_skills_without_owning_their_canonical_directory() {
 }
 
 #[test]
+fn tracked_local_symlink_stays_repository_owned() {
+    let project = project();
+    let root = project.path();
+    fs::create_dir_all(root.join(".agents/skills/local")).unwrap();
+    let text = "---\nname: local\ndescription: Local project rules\n---\nLocal body\n";
+    fs::write(root.join(".agents/skills/local/SKILL.md"), text).unwrap();
+    fs::create_dir_all(root.join(".claude/skills")).unwrap();
+    std::os::unix::fs::symlink("../../.agents/skills/local", root.join(".claude/skills/local"))
+        .unwrap();
+    assert!(
+        Command::new("git")
+            .current_dir(root)
+            .args(["add", ".agents/skills/local", ".claude/skills/local"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    let input = manifest("[]");
+    let source = MemorySource::default();
+    let _lock = ProjectLock::acquire(root).unwrap();
+    let plan = Planner::new(root, &input, &source).build().unwrap();
+    Transaction::new(&_lock).apply(&plan).unwrap();
+    assert!(fs::symlink_metadata(root.join(".claude/skills/local")).unwrap().is_symlink());
+    let state = agents_manifest::plan::load_state(root).unwrap();
+    assert!(!state.outputs.contains_key(".claude/skills/local"));
+    let ignore = fs::read_to_string(root.join(".gitignore")).unwrap();
+    assert!(!ignore.contains(".claude/skills/local"));
+}
+
+#[test]
 fn plan_never_writes_project_files_and_detects_tracked_output() {
     let project = project();
     let root = project.path();
