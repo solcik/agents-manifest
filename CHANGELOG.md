@@ -2,6 +2,27 @@
 
 This file records changes for each release.
 
+## [0.6.0](https://github.com/solcik/agents-manifest/compare/v0.5.0...v0.6.0) - 2026-11-06
+
+### Added
+
+- leave tracked local skill projections to the repository ([#19](https://github.com/solcik/agents-manifest/pull/19))
+
+
+### Maintenance
+
+- **devenv:** pin devenv to 2.4.0 ([#17](https://github.com/solcik/agents-manifest/pull/17))
+
+- **deps:** pin devenv and nixpkgs to the shared revisions ([#18](https://github.com/solcik/agents-manifest/pull/18))
+
+
+
+
+### Contributors
+
+- @davidsolc-ai
+
+
 ## [0.5.0](https://github.com/solcik/agents-manifest/compare/v0.4.0...v0.5.0) - 2026-09-29
 
 ### Added
