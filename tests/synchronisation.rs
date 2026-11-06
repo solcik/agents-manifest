@@ -236,8 +236,11 @@ fn tracked_local_symlink_stays_repository_owned() {
     let text = "---\nname: local\ndescription: Local project rules\n---\nLocal body\n";
     fs::write(root.join(".agents/skills/local/SKILL.md"), text).unwrap();
     fs::create_dir_all(root.join(".claude/skills")).unwrap();
-    std::os::unix::fs::symlink("../../.agents/skills/local", root.join(".claude/skills/local"))
-        .unwrap();
+    std::os::unix::fs::symlink(
+        "../../.agents/skills/local",
+        root.join(".claude/skills/local"),
+    )
+    .unwrap();
     assert!(
         Command::new("git")
             .current_dir(root)
@@ -251,7 +254,11 @@ fn tracked_local_symlink_stays_repository_owned() {
     let _lock = ProjectLock::acquire(root).unwrap();
     let plan = Planner::new(root, &input, &source).build().unwrap();
     Transaction::new(&_lock).apply(&plan).unwrap();
-    assert!(fs::symlink_metadata(root.join(".claude/skills/local")).unwrap().is_symlink());
+    assert!(
+        fs::symlink_metadata(root.join(".claude/skills/local"))
+            .unwrap()
+            .is_symlink()
+    );
     let state = agents_manifest::plan::load_state(root).unwrap();
     assert!(!state.outputs.contains_key(".claude/skills/local"));
     let ignore = fs::read_to_string(root.join(".gitignore")).unwrap();
